@@ -395,16 +395,10 @@ height: 63px;
       };
   
       const buildArticleUrl = (a) => {
-        const byDate = toDDMMYYYY(a?.publish_date);
-        if (!byDate) return "#";
-        const isLocal =
-          location.hostname === "127.0.0.1" ||
-          location.hostname === "localhost" ||
-          location.protocol === "file:";
-        return isLocal
-          ? `detail_items.html?d=${encodeURIComponent(byDate)}`
-          : `/items/${encodeURIComponent(byDate)}`;
-      };
+  const byDate = toDDMMYYYY(a?.publish_date);
+  return byDate ? `detail_items.html?d=${encodeURIComponent(byDate)}` : "#";
+};
+
   
       // ---- дата из URL ----
       const urlD    = new URLSearchParams(location.search).get("d");
