@@ -203,7 +203,7 @@
       <div id="w-node-_1b0d3e08-da66-d627-3771-6e55b2619114-2bb2f693" class="w-layout-cell cell-160">
         <div class="text-block-196">ООО «МФП ТРЕЙДИНГ РУС»,<br> <br>ИНН: <a href="#" class="iin">7735187206</a>, КПП: 773501001,<br>‍<br>Адрес: <a href="#" class="link-33">1426054</a>, УДМУРТСКАЯ РЕСПУБЛИКА, Г.О. ГОРОД ИЖЕВСК,Г ИЖЕВСК, УЛ ХОЛМОГОРОВА, Д. 17, ПОМЕЩЕНИЕ 175,<br>тел.: <a href="#" class="link-34">+7 (341) 233-0518</a><br>‍<br>info@mfptrading.ru</div>
       </div>
-      <div id="w-node-_1b0d3e08-da66-d627-3771-6e55b2619128-2bb2f693" class="w-layout-cell cell-161"><img src="images/мфп-трейдинг-рус.png" loading="lazy" width="565" sizes="(max-width: 767px) 100vw, 565px" alt="" srcset="images/мфп-трейдинг-рус-p-500.png 500w, images/мфп-трейдинг-рус.png 1142w" class="image-53"></div>
+      <div id="w-node-_1b0d3e08-da66-d627-3771-6e55b2619128-2bb2f693" class="w-layout-cell cell-161"><img src="images/mfp-trading-rus.png" loading="lazy" width="565" sizes="(max-width: 767px) 100vw, 565px" alt="" srcset="images/mfp-trading-rus-p-500.png 500w, images/mfp-trading-rus.png 1142w" class="image-53"></div>
     </div>
   </section>
   <div data-w-id="f161a5df-2f24-29c8-04a2-ace707ee6fc7" style="display:none" class="modal-wrapper">
@@ -288,18 +288,12 @@
         const yyyy = d.getFullYear();
         return `${dd}.${mm}.${yyyy}`;
       };
-  
+
+
       const buildArticleUrl = (a) => {
-        const byDate = toDDMMYYYY(a?.publish_date);
-        if (!byDate) return "#";
-        const isLocal =
-          location.hostname === "127.0.0.1" ||
-          location.hostname === "localhost" ||
-          location.protocol === "file:";
-        return isLocal
-          ? `detail_items.html?d=${encodeURIComponent(byDate)}`
-          : `/items/${encodeURIComponent(byDate)}`;
-      };
+  const byDate = toDDMMYYYY(a?.publish_date);
+  return byDate ? `/detail_items.html?d=${encodeURIComponent(byDate)}` : "#";
+};
   
       // ——— перенос встроенных <style> из .w-embed наружу (иначе Webflow может прятать) ———
       (() => {
