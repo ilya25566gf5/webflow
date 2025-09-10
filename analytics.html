@@ -248,7 +248,7 @@
   <script src="js/webflow.js" type="text/javascript"></script>
 
   <script>
-    document.addEventListener("DOMContentLoaded", () => {
+    window.addEventListener("load", () => {
       // ——— Supabase ———
       const SUPABASE_URL = "https://bbexjcidqraeihrbkzzh.supabase.co";
       const API_KEY =
@@ -316,19 +316,50 @@
         qs(".collection-list-wrapper [fs-cmsload-element='list'].w-dyn-items") ||
         qs(".w-dyn-items");
   
+      // шаблон карточки
       let templateItem =
         (listContainer && qs(".item.w-dyn-item", listContainer)) ||
         qs(".w-dyn-item");
       if (templateItem) templateItem = templateItem.cloneNode(true);
   
-      const paginationNext =
+      // кнопки (объявляем как let, т.к. заменим на клоны)
+      let paginationNext =
         qs(".w-pagination-next.next") || qs(".w-pagination-next");
-      const paginationPrev = qs(".w-pagination-previous");
-      const collapseBtn = qs(".close-more") || qs("[data-collapse='true']");
+      let paginationPrev = qs(".w-pagination-previous");
+      let collapseBtn = qs(".close-more") || qs("[data-collapse='true']");
+  
+      // ——— нейтрализуем Webflow/Finsweet пагинацию ———
+      (function neutralizeThirdParty() {
+        // снимаем атрибуты Finsweet CMS Load (чтобы он не перерисовывал список)
+        qsa("[fs-cmsload-element]").forEach(el => el.removeAttribute("fs-cmsload-element"));
+  
+        // заменяем кнопки на их клоны — так уберём навешанные слушатели
+        if (paginationNext && paginationNext.parentNode) {
+          const clone = paginationNext.cloneNode(true);
+          paginationNext.parentNode.replaceChild(clone, paginationNext);
+          paginationNext = clone;
+        }
+        if (paginationPrev && paginationPrev.parentNode) {
+          const clone = paginationPrev.cloneNode(true);
+          paginationPrev.parentNode.replaceChild(clone, paginationPrev);
+          paginationPrev = clone;
+        }
+        if (collapseBtn && collapseBtn.parentNode) {
+          const clone = collapseBtn.cloneNode(true);
+          collapseBtn.parentNode.replaceChild(clone, collapseBtn);
+          collapseBtn = clone;
+        }
+  
+        // прячем стандартный «Previous», как в старом коде
+        if (paginationPrev) paginationPrev.style.display = "none";
+  
+        // на всякий случай — помечаем список, чтобы скрипты Webflow его игнорировали
+        if (listContainer) listContainer.setAttribute("data-wf-ignore", "true");
+      })();
   
       // ——— параметры ———
-      const PAGE_SIZE = 8;            // сколько показываем за клик
-      const PAGE_FETCH = 100;         // сколько грузим за 1 сетевой запрос из Supabase (страница API)
+      const PAGE_SIZE  = 8;   // показываем за клик
+      const PAGE_FETCH = 100; // грузим из API за запрос
   
       // ——— состояние ———
       let allRows = [];
@@ -377,8 +408,7 @@
         nextSlice.forEach(a => listContainer.appendChild(renderCard(a)));
         renderedCount += nextSlice.length;
   
-        // как в старом коде — прячем «Previous» и удаляем заглушку
-        if (paginationPrev) paginationPrev.style.display = "none";
+        // удалить заглушку, если была
         const empty = qs(".collection-list-wrapper .w-dyn-empty") || qs(".w-dyn-empty");
         if (empty) empty.remove();
   
@@ -410,7 +440,7 @@
         });
       }
   
-      // ——— ПАГИНИРОВАННАЯ ЗАГРУЗКА ИЗ SUPABASE (обходит лимит 16) ———
+      // ——— постраничная загрузка из Supabase (обходит лимит 16) ———
       async function fetchAllArticles() {
         const baseUrl = `${SUPABASE_URL}/rest/v1/articles?select=id,slug,headline,full_text,publish_date&order=publish_date.desc`;
         let offset = 0;
@@ -424,13 +454,12 @@
           const headers = {
             ...headersBase,
             Range: `items=${start}-${end}`,
-            Prefer: "count=exact" // вернёт Content-Range с общим числом
+            Prefer: "count=exact"
           };
   
           const res = await fetch(baseUrl, { headers });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
   
-          // можно использовать заголовок Content-Range: items start-end/total
           const cr = res.headers.get("Content-Range");
           if (cr && cr.includes("/")) {
             const totalStr = cr.split("/")[1];
@@ -441,14 +470,10 @@
           const data = await res.json();
           out.push(...data);
   
-          // лог для отладки
           console.log(`[Supabase] page ${Math.floor(offset / PAGE_FETCH) + 1}: +${data.length}; total so far ${out.length}${totalHint != null ? ` / ${totalHint}` : ""}`);
   
-          // если вернулась неполная страница — всё
           if (data.length < PAGE_FETCH) break;
-  
           offset += PAGE_FETCH;
-          // защита от бесконечного цикла, если сервер врёт по размеру страницы
           if (out.length >= 20000) break;
         }
   
@@ -459,10 +484,9 @@
       // ——— загрузка + старт ———
       (async () => {
         try {
-          allRows = await fetchAllArticles();
-  
-          // сортировка на всякий случай
-          sorted = allRows.slice().sort((a, b) => {
+          const rows = await fetchAllArticles();
+          // сортируем на всякий случай
+          sorted = rows.slice().sort((a, b) => {
             const da = parseDateFlexible(a.publish_date) || new Date(0);
             const db = parseDateFlexible(b.publish_date) || new Date(0);
             return db - da;
@@ -476,6 +500,7 @@
       })();
     });
   </script>
+  
   
   
 
