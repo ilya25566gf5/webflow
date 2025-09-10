@@ -264,6 +264,13 @@
         return s.length > n ? s.slice(0, n).replace(/\s+\S*$/, "") + "…" : s;
       };
   
+      // ——— управление видимостью «Показать ещё» ———
+      function updateShowMoreVisibility() {
+        if (!paginationNext) return;
+        const shouldHide = renderedCount >= sorted.length || sorted.length <= PAGE_SIZE;
+        paginationNext.style.display = shouldHide ? "none" : "";
+      }
+  
       function parseDateFlexible(s) {
         if (!s) return null;
         s = String(s).trim();
@@ -296,12 +303,11 @@
         const yyyy = d.getFullYear();
         return `${dd}.${mm}.${yyyy}`;
       };
-
-
+  
       const buildArticleUrl = (a) => {
-  const byDate = toDDMMYYYY(a?.publish_date);
-  return byDate ? `/detail_items.html?d=${encodeURIComponent(byDate)}` : "#";
-};
+        const byDate = toDDMMYYYY(a?.publish_date);
+        return byDate ? `/detail_items.html?d=${encodeURIComponent(byDate)}` : "#";
+      };
   
       // ——— перенос встроенных <style> из .w-embed наружу (иначе Webflow может прятать) ———
       (() => {
@@ -314,25 +320,22 @@
       })();
   
       // ——— узлы интерфейса ———
-      const listContainer = qs(".collection-list-wrapper [fs-cmsload-element='list'].w-dyn-items");
-      // шаблон (первый .item внутри списка)
-      let templateItem = listContainer ? qs(".item.w-dyn-item", listContainer) : null;
-      if (templateItem) templateItem = templateItem.cloneNode(true);
+      const listContainer = qs(".w-dyn-items");            // контейнер карточек
+      const templateItem  = qs(".w-dyn-item");             // шаблон (существующая карточка)
+      const paginationNext = qs(".w-pagination-next");     // «Показать ещё»
+      const collapseBtn    = qs('[data-collapse="true"]'); // «Скрыть»
   
-      const paginationNext = qs(".w-pagination-next.next");
-      const paginationPrev = qs(".w-pagination-previous"); // есть в разметке, но не используем (можно скрыть)
-      const collapseBtn    = qs(".close-more");
+      // параметры пагинации
+      const PAGE_SIZE = 8; // показываем по 8 за раз
   
-      // ——— состояние ———
-      const PAGE_SIZE = 8;
+      // состояние
       let allRows = [];
-      let sorted  = [];
+      let sorted = [];
       let renderedCount = 0;
   
-      // ——— рендер карточки ———
+      // ——— построение карточки статьи ———
       function renderCard(a) {
-        const node = templateItem ? templateItem.cloneNode(true) : document.createElement("div");
-        node.className = "item w-dyn-item";
+        const node = templateItem.cloneNode(true);
   
         // title
         const t = qs(".title", node);
@@ -366,28 +369,8 @@
         nextSlice.forEach(a => listContainer.appendChild(renderCard(a)));
         renderedCount += nextSlice.length;
   
-        // управление кнопками
-        if (paginationNext) {
-          if (renderedCount >= sorted.length) {
-            paginationNext.classList.add("w-pagination-next--disabled");
-            paginationNext.setAttribute("aria-disabled", "true");
-            paginationNext.style.pointerEvents = "none";
-            paginationNext.style.opacity = "0.5";
-          } else {
-            paginationNext.classList.remove("w-pagination-next--disabled");
-            paginationNext.removeAttribute("aria-disabled");
-            paginationNext.style.pointerEvents = "";
-            paginationNext.style.opacity = "";
-          }
-        }
-        if (paginationPrev) {
-          // можно просто скрыть «Previous»
-          paginationPrev.style.display = "none";
-        }
-  
-        // убрать заглушку
-        const empty = qs(".collection-list-wrapper .w-dyn-empty");
-        if (empty) empty.remove();
+        // управление видимостью кнопки
+        updateShowMoreVisibility();
       }
   
       // ——— свернуть до первых 8 ———
@@ -396,13 +379,7 @@
         listContainer.innerHTML = "";
         renderedCount = 0;
         renderNextPage();
-        // вернуть активность «Показать еще», если записей больше 8
-        if (paginationNext && sorted.length > PAGE_SIZE) {
-          paginationNext.classList.remove("w-pagination-next--disabled");
-          paginationNext.removeAttribute("aria-disabled");
-          paginationNext.style.pointerEvents = "";
-          paginationNext.style.opacity = "";
-        }
+        updateShowMoreVisibility();
       }
   
       // ——— handlers ———
@@ -422,9 +399,14 @@
         });
       }
   
-      // ——— загрузка ———
-      fetch(`${SUPABASE_URL}/rest/v1/articles?select=id,slug,headline,full_text,publish_date&order=publish_date.desc`, { headers })
-        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      // ——— загрузка данных из Supabase ———
+      fetch(`${SUPABASE_URL}/rest/v1/articles?select=id,slug,headline,full_text,publish_date&order=publish_date.desc&limit=10000`, {
+        headers
+      })
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
         .then(rows => {
           allRows = Array.isArray(rows) ? rows : [];
   
@@ -442,6 +424,206 @@
     });
   </script>
   
+  
 
 </body>
 </html>
+
+
+
+
+
+<!-- <script>
+  document.addEventListener("DOMContentLoaded", () => {
+    // ——— Supabase ———
+    const SUPABASE_URL = "https://bbexjcidqraeihrbkzzh.supabase.co";
+    const API_KEY =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJiZXhqY2lkcXJhZWlocmJrenpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI0MjE0NjUsImV4cCI6MjA2Nzk5NzQ2NX0.Ewb1E13s53IGWuFI0SmW3lYmZTgOHneTn4aIC3-wzaI";
+    const headers = { apikey: API_KEY, Authorization: `Bearer ${API_KEY}` };
+
+    // ——— helpers ———
+    const qs  = (sel, root=document) => root.querySelector(sel);
+    const qsa = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+    const fmt = (s) => (s ?? "").toString().trim();
+    const truncate = (s, n) => {
+      s = fmt(s);
+      return s.length > n ? s.slice(0, n).replace(/\s+\S*$/, "") + "…" : s;
+    };
+
+    function parseDateFlexible(s) {
+      if (!s) return null;
+      s = String(s).trim();
+      if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) {
+        const [d,m,y] = s.split(".").map(Number);
+        return new Date(y, m-1, d);
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        const [y,m,d] = s.split("-").map(Number);
+        return new Date(y, m-1, d);
+      }
+      if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+        const t = new Date(s);
+        return isNaN(t) ? null : t;
+      }
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+        const [mm,dd,yyyy] = s.split("/").map(Number);
+        return new Date(yyyy, mm-1, dd);
+      }
+      return null;
+    }
+
+    const toDDMMYYYY = (dateStr) => {
+      if (!dateStr) return "";
+      if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) return dateStr;
+      const d = parseDateFlexible(dateStr);
+      if (!d || isNaN(d)) return "";
+      const dd = String(d.getDate()).padStart(2,"0");
+      const mm = String(d.getMonth()+1).padStart(2,"0");
+      const yyyy = d.getFullYear();
+      return `${dd}.${mm}.${yyyy}`;
+    };
+
+
+    const buildArticleUrl = (a) => {
+const byDate = toDDMMYYYY(a?.publish_date);
+return byDate ? `/detail_items.html?d=${encodeURIComponent(byDate)}` : "#";
+};
+
+    // ——— перенос встроенных <style> из .w-embed наружу (иначе Webflow может прятать) ———
+    (() => {
+      const head = document.head;
+      qsa(".code-embed-5.w-embed").forEach(embed => {
+        embed.querySelectorAll("style").forEach(s => head.appendChild(s.cloneNode(true)));
+        // оставим сам embed пустым
+        embed.innerHTML = "";
+      });
+    })();
+
+    // ——— узлы интерфейса ———
+    const listContainer = qs(".collection-list-wrapper [fs-cmsload-element='list'].w-dyn-items");
+    // шаблон (первый .item внутри списка)
+    let templateItem = listContainer ? qs(".item.w-dyn-item", listContainer) : null;
+    if (templateItem) templateItem = templateItem.cloneNode(true);
+
+    const paginationNext = qs(".w-pagination-next.next");
+    const paginationPrev = qs(".w-pagination-previous"); // есть в разметке, но не используем (можно скрыть)
+    const collapseBtn    = qs(".close-more");
+
+    // ——— состояние ———
+    const PAGE_SIZE = 8;
+    let allRows = [];
+    let sorted  = [];
+    let renderedCount = 0;
+
+    // ——— рендер карточки ———
+    function renderCard(a) {
+      const node = templateItem ? templateItem.cloneNode(true) : document.createElement("div");
+      node.className = "item w-dyn-item";
+
+      // title
+      const t = qs(".title", node);
+      if (t) { t.classList.remove("w-dyn-bind-empty"); t.textContent = fmt(a.headline); }
+
+      // text (анонс)
+      const textEl = qs(".text.w-richtext", node);
+      if (textEl) {
+        textEl.classList.remove("w-dyn-bind-empty");
+        textEl.textContent = truncate(fmt(a.full_text), 900);
+      }
+
+      // date
+      const d = qs(".text-block-75", node);
+      if (d) { d.classList.remove("w-dyn-bind-empty"); d.textContent = toDDMMYYYY(a.publish_date) || fmt(a.publish_date); }
+
+      // link
+      const link = qs(".link-10", node);
+      if (link) {
+        link.href = buildArticleUrl(a);
+        link.target = "_self";
+      }
+
+      return node;
+    }
+
+    // ——— рендер порции ———
+    function renderNextPage() {
+      if (!listContainer) return;
+      const nextSlice = sorted.slice(renderedCount, renderedCount + PAGE_SIZE);
+      nextSlice.forEach(a => listContainer.appendChild(renderCard(a)));
+      renderedCount += nextSlice.length;
+
+      // управление кнопками
+      if (paginationNext) {
+        if (renderedCount >= sorted.length) {
+          paginationNext.classList.add("w-pagination-next--disabled");
+          paginationNext.setAttribute("aria-disabled", "true");
+          paginationNext.style.pointerEvents = "none";
+          paginationNext.style.opacity = "0.5";
+        } else {
+          paginationNext.classList.remove("w-pagination-next--disabled");
+          paginationNext.removeAttribute("aria-disabled");
+          paginationNext.style.pointerEvents = "";
+          paginationNext.style.opacity = "";
+        }
+      }
+      if (paginationPrev) {
+        // можно просто скрыть «Previous»
+        paginationPrev.style.display = "none";
+      }
+
+      // убрать заглушку
+      const empty = qs(".collection-list-wrapper .w-dyn-empty");
+      if (empty) empty.remove();
+    }
+
+    // ——— свернуть до первых 8 ———
+    function collapseToFirstPage() {
+      if (!listContainer) return;
+      listContainer.innerHTML = "";
+      renderedCount = 0;
+      renderNextPage();
+      // вернуть активность «Показать еще», если записей больше 8
+      if (paginationNext && sorted.length > PAGE_SIZE) {
+        paginationNext.classList.remove("w-pagination-next--disabled");
+        paginationNext.removeAttribute("aria-disabled");
+        paginationNext.style.pointerEvents = "";
+        paginationNext.style.opacity = "";
+      }
+    }
+
+    // ——— handlers ———
+    if (paginationNext) {
+      paginationNext.addEventListener("click", (e) => {
+        e.preventDefault();
+        renderNextPage();
+      });
+    }
+    if (collapseBtn) {
+      collapseBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        collapseToFirstPage();
+        // проскроллим к началу списка (опционально)
+        const listTop = qs(".section-analitic-item");
+        if (listTop) listTop.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+
+    // ——— загрузка ———
+    fetch(`${SUPABASE_URL}/rest/v1/articles?select=id,slug,headline,full_text,publish_date&order=publish_date.desc`, { headers })
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(rows => {
+        allRows = Array.isArray(rows) ? rows : [];
+
+        // жёстко отсортируем по дате (новые → старые), на случай «кривых» строк
+        sorted = allRows.slice().sort((a, b) => {
+          const da = parseDateFlexible(a.publish_date) || new Date(0);
+          const db = parseDateFlexible(b.publish_date) || new Date(0);
+          return db - da;
+        });
+
+        // начальная отрисовка
+        collapseToFirstPage();
+      })
+      .catch(e => console.error("Ошибка Supabase:", e));
+  });
+</script> -->
