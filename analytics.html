@@ -246,7 +246,6 @@
   </div>
   <script src="https://d3e54v103j8qbb.cloudfront.net/js/jquery-3.5.1.min.dc5e7f18c8.js?site=6873686d2aa3befd2bb2f69a" type="text/javascript" integrity="sha256-9/aliU8dGd2tb6OSsuzixeV4y/faTqgFtohetphbbj0=" crossorigin="anonymous"></script>
   <script src="js/webflow.js" type="text/javascript"></script>
-
   <script>
     window.addEventListener("load", () => {
       // ——— Supabase ———
@@ -322,18 +321,14 @@
         qs(".w-dyn-item");
       if (templateItem) templateItem = templateItem.cloneNode(true);
   
-      // кнопки (объявляем как let, т.к. заменим на клоны)
+      // кнопки (делаем клоны, чтобы убрать чужие слушатели)
       let paginationNext =
         qs(".w-pagination-next.next") || qs(".w-pagination-next");
       let paginationPrev = qs(".w-pagination-previous");
       let collapseBtn = qs(".close-more") || qs("[data-collapse='true']");
   
-      // ——— нейтрализуем Webflow/Finsweet пагинацию ———
       (function neutralizeThirdParty() {
-        // снимаем атрибуты Finsweet CMS Load (чтобы он не перерисовывал список)
         qsa("[fs-cmsload-element]").forEach(el => el.removeAttribute("fs-cmsload-element"));
-  
-        // заменяем кнопки на их клоны — так уберём навешанные слушатели
         if (paginationNext && paginationNext.parentNode) {
           const clone = paginationNext.cloneNode(true);
           paginationNext.parentNode.replaceChild(clone, paginationNext);
@@ -349,27 +344,53 @@
           collapseBtn.parentNode.replaceChild(clone, collapseBtn);
           collapseBtn = clone;
         }
-  
-        // прячем стандартный «Previous», как в старом коде
         if (paginationPrev) paginationPrev.style.display = "none";
-  
-        // на всякий случай — помечаем список, чтобы скрипты Webflow его игнорировали
         if (listContainer) listContainer.setAttribute("data-wf-ignore", "true");
       })();
   
       // ——— параметры ———
-      const PAGE_SIZE  = 8;   // показываем за клик
-      const PAGE_FETCH = 100; // грузим из API за запрос
+      const PAGE_SIZE  = 8;   // показываем за клик (как и было)
+      const PAGE_FETCH = 16;  // СКОЛЬКО тянем из API за раз (порциями, не всё сразу)
   
       // ——— состояние ———
-      let allRows = [];
-      let sorted = [];
-      let renderedCount = 0;
+      let sorted = [];           // локальный буфер статей
+      let renderedCount = 0;     // сколько уже нарисовано
+      let apiOffset = 0;         // отступ по серверной пагинации
+      let apiExhausted = false;  // признак, что записи в БД закончились
+  
+      // ——— серверная пагинация из Supabase ———
+      async function fetchNextChunk() {
+        if (apiExhausted) return [];
+        const start = apiOffset;
+        const end   = apiOffset + PAGE_FETCH - 1;
+  
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/articles?select=id,slug,headline,full_text,publish_date&order=publish_date.desc`,
+          { headers: { ...headersBase, Range: `items=${start}-${end}`, Prefer: "count=exact" } }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  
+        const data = await res.json();
+        apiOffset += data.length;
+        if (data.length < PAGE_FETCH) apiExhausted = true;
+  
+        // на всякий случай — сортировка по дате
+        data.sort((a, b) => {
+          const da = parseDateFlexible(a.publish_date) || new Date(0);
+          const db = parseDateFlexible(b.publish_date) || new Date(0);
+          return db - da;
+        });
+  
+        return data;
+      }
   
       // ——— управление видимостью «Показать ещё» ———
       function updateShowMoreVisibility() {
         if (!paginationNext) return;
-        const shouldHide = renderedCount >= sorted.length || sorted.length <= PAGE_SIZE;
+        // Скрываем кнопку только когда ВООБЩЕ больше нечего показывать и догружать
+        const nothingLeftToRender = renderedCount >= sorted.length;
+        const nothingLeftToLoad   = apiExhausted;
+        const shouldHide = nothingLeftToRender && nothingLeftToLoad;
         paginationNext.style.display = shouldHide ? "none" : "";
       }
   
@@ -405,10 +426,14 @@
         if (!listContainer) return;
   
         const nextSlice = sorted.slice(renderedCount, renderedCount + PAGE_SIZE);
-        nextSlice.forEach(a => listContainer.appendChild(renderCard(a)));
+  
+        // Батчим вставку → меньше reflow
+        const frag = document.createDocumentFragment();
+        nextSlice.forEach(a => frag.appendChild(renderCard(a)));
+        listContainer.appendChild(frag);
+  
         renderedCount += nextSlice.length;
   
-        // удалить заглушку, если была
         const empty = qs(".collection-list-wrapper .w-dyn-empty") || qs(".w-dyn-empty");
         if (empty) empty.remove();
   
@@ -424,283 +449,43 @@
         updateShowMoreVisibility();
       }
   
-      // ——— обработчики ———
-      if (paginationNext) {
-        paginationNext.addEventListener("click", (e) => {
-          e.preventDefault();
-          renderNextPage();
-        });
-      }
-      if (collapseBtn) {
-        collapseBtn.addEventListener("click", (e) => {
-          e.preventDefault();
-          collapseToFirstPage();
-          const listTop = qs(".section-analitic-item");
-          if (listTop) listTop.scrollIntoView({ behavior: "smooth", block: "start" });
-        });
-      }
-  
-      // ——— постраничная загрузка из Supabase (обходит лимит 16) ———
-      async function fetchAllArticles() {
-        const baseUrl = `${SUPABASE_URL}/rest/v1/articles?select=id,slug,headline,full_text,publish_date&order=publish_date.desc`;
-        let offset = 0;
-        const out = [];
-        let totalHint = null;
-  
-        while (true) {
-          const start = offset;
-          const end   = offset + PAGE_FETCH - 1;
-  
-          const headers = {
-            ...headersBase,
-            Range: `items=${start}-${end}`,
-            Prefer: "count=exact"
-          };
-  
-          const res = await fetch(baseUrl, { headers });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  
-          const cr = res.headers.get("Content-Range");
-          if (cr && cr.includes("/")) {
-            const totalStr = cr.split("/")[1];
-            const n = parseInt(totalStr, 10);
-            if (!Number.isNaN(n)) totalHint = n;
-          }
-  
-          const data = await res.json();
-          out.push(...data);
-  
-          console.log(`[Supabase] page ${Math.floor(offset / PAGE_FETCH) + 1}: +${data.length}; total so far ${out.length}${totalHint != null ? ` / ${totalHint}` : ""}`);
-  
-          if (data.length < PAGE_FETCH) break;
-          offset += PAGE_FETCH;
-          if (out.length >= 20000) break;
-        }
-  
-        console.log(`[Supabase] final total: ${out.length}${totalHint != null ? ` / ${totalHint}` : ""}`);
-        return out;
-      }
-      
       // ——— загрузка + старт ———
       (async () => {
         try {
-          const rows = await fetchAllArticles();
-          // сортируем на всякий случай
-          sorted = rows.slice().sort((a, b) => {
-            const da = parseDateFlexible(a.publish_date) || new Date(0);
-            const db = parseDateFlexible(b.publish_date) || new Date(0);
-            return db - da;
-          });
-  
-          console.log(`[UI] will render ${sorted.length} articles`);
+          // Первая партия с бэка
+          sorted = await fetchNextChunk();
           collapseToFirstPage();
+  
+          // «Показать ещё»: если локальные кончились — дотягиваем и рендерим
+          if (paginationNext) {
+            paginationNext.addEventListener("click", async (e) => {
+              e.preventDefault();
+  
+              const needMore = renderedCount >= sorted.length && !apiExhausted;
+              if (needMore) {
+                const more = await fetchNextChunk();
+                sorted.push(...more);
+              }
+              renderNextPage();
+            });
+          }
+  
+          // «Скрыть» — как и было
+          if (collapseBtn) {
+            collapseBtn.addEventListener("click", (e) => {
+              e.preventDefault();
+              collapseToFirstPage();
+              const listTop = qs(".section-analitic-item");
+              if (listTop) listTop.scrollIntoView({ behavior: "smooth", block: "start" });
+            });
+          }
         } catch (e) {
           console.error("Ошибка Supabase:", e);
         }
       })();
     });
-  </script>
-  
-  
-  
-
-</body>
+  </script>  
+  </body>
 </html>
 
-
-
-
-<!-- <script>
-  document.addEventListener("DOMContentLoaded", () => {
-    // ——— Supabase ———
-    const SUPABASE_URL = "https://bbexjcidqraeihrbkzzh.supabase.co";
-    const API_KEY =
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJiZXhqY2lkcXJhZWlocmJrenpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI0MjE0NjUsImV4cCI6MjA2Nzk5NzQ2NX0.Ewb1E13s53IGWuFI0SmW3lYmZTgOHneTn4aIC3-wzaI";
-    const headers = { apikey: API_KEY, Authorization: `Bearer ${API_KEY}` };
-
-    // ——— helpers ———
-    const qs  = (sel, root=document) => root.querySelector(sel);
-    const qsa = (sel, root=document) => Array.from(root.querySelectorAll(sel));
-    const fmt = (s) => (s ?? "").toString().trim();
-    const truncate = (s, n) => {
-      s = fmt(s);
-      return s.length > n ? s.slice(0, n).replace(/\s+\S*$/, "") + "…" : s;
-    };
-
-    function parseDateFlexible(s) {
-      if (!s) return null;
-      s = String(s).trim();
-      if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) {
-        const [d,m,y] = s.split(".").map(Number);
-        return new Date(y, m-1, d);
-      }
-      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-        const [y,m,d] = s.split("-").map(Number);
-        return new Date(y, m-1, d);
-      }
-      if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
-        const t = new Date(s);
-        return isNaN(t) ? null : t;
-      }
-      if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
-        const [mm,dd,yyyy] = s.split("/").map(Number);
-        return new Date(yyyy, mm-1, dd);
-      }
-      return null;
-    }
-
-    const toDDMMYYYY = (dateStr) => {
-      if (!dateStr) return "";
-      if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) return dateStr;
-      const d = parseDateFlexible(dateStr);
-      if (!d || isNaN(d)) return "";
-      const dd = String(d.getDate()).padStart(2,"0");
-      const mm = String(d.getMonth()+1).padStart(2,"0");
-      const yyyy = d.getFullYear();
-      return `${dd}.${mm}.${yyyy}`;
-    };
-
-
-    const buildArticleUrl = (a) => {
-const byDate = toDDMMYYYY(a?.publish_date);
-return byDate ? `/detail_items.html?d=${encodeURIComponent(byDate)}` : "#";
-};
-
-    // ——— перенос встроенных <style> из .w-embed наружу (иначе Webflow может прятать) ———
-    (() => {
-      const head = document.head;
-      qsa(".code-embed-5.w-embed").forEach(embed => {
-        embed.querySelectorAll("style").forEach(s => head.appendChild(s.cloneNode(true)));
-        // оставим сам embed пустым
-        embed.innerHTML = "";
-      });
-    })();
-
-    // ——— узлы интерфейса ———
-    const listContainer = qs(".collection-list-wrapper [fs-cmsload-element='list'].w-dyn-items");
-    // шаблон (первый .item внутри списка)
-    let templateItem = listContainer ? qs(".item.w-dyn-item", listContainer) : null;
-    if (templateItem) templateItem = templateItem.cloneNode(true);
-
-    const paginationNext = qs(".w-pagination-next.next");
-    const paginationPrev = qs(".w-pagination-previous"); // есть в разметке, но не используем (можно скрыть)
-    const collapseBtn    = qs(".close-more");
-
-    // ——— состояние ———
-    const PAGE_SIZE = 8;
-    let allRows = [];
-    let sorted  = [];
-    let renderedCount = 0;
-
-    // ——— рендер карточки ———
-    function renderCard(a) {
-      const node = templateItem ? templateItem.cloneNode(true) : document.createElement("div");
-      node.className = "item w-dyn-item";
-
-      // title
-      const t = qs(".title", node);
-      if (t) { t.classList.remove("w-dyn-bind-empty"); t.textContent = fmt(a.headline); }
-
-      // text (анонс)
-      const textEl = qs(".text.w-richtext", node);
-      if (textEl) {
-        textEl.classList.remove("w-dyn-bind-empty");
-        textEl.textContent = truncate(fmt(a.full_text), 900);
-      }
-
-      // date
-      const d = qs(".text-block-75", node);
-      if (d) { d.classList.remove("w-dyn-bind-empty"); d.textContent = toDDMMYYYY(a.publish_date) || fmt(a.publish_date); }
-
-      // link
-      const link = qs(".link-10", node);
-      if (link) {
-        link.href = buildArticleUrl(a);
-        link.target = "_self";
-      }
-
-      return node;
-    }
-
-    // ——— рендер порции ———
-    function renderNextPage() {
-      if (!listContainer) return;
-      const nextSlice = sorted.slice(renderedCount, renderedCount + PAGE_SIZE);
-      nextSlice.forEach(a => listContainer.appendChild(renderCard(a)));
-      renderedCount += nextSlice.length;
-
-      // управление кнопками
-      if (paginationNext) {
-        if (renderedCount >= sorted.length) {
-          paginationNext.classList.add("w-pagination-next--disabled");
-          paginationNext.setAttribute("aria-disabled", "true");
-          paginationNext.style.pointerEvents = "none";
-          paginationNext.style.opacity = "0.5";
-        } else {
-          paginationNext.classList.remove("w-pagination-next--disabled");
-          paginationNext.removeAttribute("aria-disabled");
-          paginationNext.style.pointerEvents = "";
-          paginationNext.style.opacity = "";
-        }
-      }
-      if (paginationPrev) {
-        // можно просто скрыть «Previous»
-        paginationPrev.style.display = "none";
-      }
-
-      // убрать заглушку
-      const empty = qs(".collection-list-wrapper .w-dyn-empty");
-      if (empty) empty.remove();
-    }
-
-    // ——— свернуть до первых 8 ———
-    function collapseToFirstPage() {
-      if (!listContainer) return;
-      listContainer.innerHTML = "";
-      renderedCount = 0;
-      renderNextPage();
-      // вернуть активность «Показать еще», если записей больше 8
-      if (paginationNext && sorted.length > PAGE_SIZE) {
-        paginationNext.classList.remove("w-pagination-next--disabled");
-        paginationNext.removeAttribute("aria-disabled");
-        paginationNext.style.pointerEvents = "";
-        paginationNext.style.opacity = "";
-      }
-    }
-
-    // ——— handlers ———
-    if (paginationNext) {
-      paginationNext.addEventListener("click", (e) => {
-        e.preventDefault();
-        renderNextPage();
-      });
-    }
-    if (collapseBtn) {
-      collapseBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        collapseToFirstPage();
-        // проскроллим к началу списка (опционально)
-        const listTop = qs(".section-analitic-item");
-        if (listTop) listTop.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-    }
-
-    // ——— загрузка ———
-    fetch(`${SUPABASE_URL}/rest/v1/articles?select=id,slug,headline,full_text,publish_date&order=publish_date.desc`, { headers })
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(rows => {
-        allRows = Array.isArray(rows) ? rows : [];
-
-        // жёстко отсортируем по дате (новые → старые), на случай «кривых» строк
-        sorted = allRows.slice().sort((a, b) => {
-          const da = parseDateFlexible(a.publish_date) || new Date(0);
-          const db = parseDateFlexible(b.publish_date) || new Date(0);
-          return db - da;
-        });
-
-        // начальная отрисовка
-        collapseToFirstPage();
-      })
-      .catch(e => console.error("Ошибка Supabase:", e));
-  });
-</script> -->
+      
