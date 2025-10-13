@@ -163,7 +163,45 @@
                 -webkit-line-clamp: 4 ;
             }
         }
-    </style>
+
+  /* 1) Снимаем микролаги при возврате наверх */
+  html { scroll-behavior: auto; }
+
+  /* 2) Делаем Spline-канвас фоном, который всегда готов (не выгружается) */
+  .header { 
+    position: relative; 
+    min-height: 100vh;         /* высота хедера — весь экран */
+    overflow: clip; 
+  }
+
+  .header-fon-spline {
+    position: fixed;            /* всегда закреплён у верха окна */
+    inset: 0;                   /* top:0; right:0; bottom:0; left:0 */
+    z-index: -1;                /* фон под контентом */
+    pointer-events: none;       /* клики проходят к кнопкам в хедере */
+    will-change: transform;     /* кладём на GPU */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    /* убедимся, что его не "усыпляют" (если где-то задавали): */
+    content-visibility: visible !important;
+    contain-intrinsic-size: auto !important;
+  }
+
+  /* 3) Контент хедера поверх фона */
+  .div-block-186,
+  .div-block-74,
+  .headers,
+  .navbar {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* 4) Основной контент начинается ПОД фиксированным хедером */
+  .section-analitic {
+    margin-top: 100vh;
+  }
+</style>
+
                   </head>
                   </html>
                 </div>
@@ -487,5 +525,3 @@
   </script>  
   </body>
 </html>
-
-      
