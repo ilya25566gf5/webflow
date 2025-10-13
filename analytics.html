@@ -17,48 +17,6 @@
   <link href="images/favicon.png" rel="shortcut icon" type="image/x-icon">
   <link href="images/webclip.png" rel="apple-touch-icon"><!--  [Attributes by Finsweet] CMS Load  -->
   <script async="" src="https://cdn.jsdelivr.net/npm/@finsweet/attributes-cmsload@1/cmsload.js"></script>
-
-  <style>
-    /* 1) убираем плавный скролл, чтобы не провоцировать фризы при возврате к шапке */
-    html { scroll-behavior: auto; }
-  
-    /* 2) хедер — собственный контекст наложения, чтобы child с z-index:-1 был поверх body */
-    .header {
-      position: relative;
-      z-index: 0;         /* важно! создаёт стек для z-index детей */
-      min-height: 100vh;
-      /* overflow: clip;  — если из-за него фон вдруг «обрезается», просто удали эту строку */
-    }
-  
-    /* 3) Spline-канвас как фиксированный фон шапки, всегда «на готове» */
-    .header-fon-spline {
-      position: fixed;     /* закреплён у верха окна */
-      inset: 0;
-      z-index: -1;         /* под контентом хедера, но над body */
-      pointer-events: none;
-      will-change: transform;
-      transform: translateZ(0);
-      backface-visibility: hidden;
-  
-      /* запрет «гибернации», если где-то задана */
-      content-visibility: visible !important;
-      contain-intrinsic-size: auto !important;
-    }
-  
-    /* 4) Контент шапки поверх фона */
-    .div-block-186,
-    .div-block-74,
-    .headers,
-    .navbar {
-      position: relative;
-      z-index: 1;
-    }
-  
-    /* 5) Основной контент начинается под фиксированным хедером */
-    .section-analitic { margin-top: 100vh; }
-  </style>
-  
-
 </head>
 <body>
   <section class="header">
@@ -206,7 +164,6 @@
             }
         }
     </style>
-    
                   </head>
                   </html>
                 </div>
@@ -343,17 +300,8 @@
         const byDate = toDDMMYYYY(a?.publish_date);
         return byDate ? `/detail_items.html?d=${encodeURIComponent(byDate)}` : "#";
       };
-  
-      // ——— перенос встроенных <style> из .w-embed наружу ———
-      (() => {
-        const head = document.head;
-        qsa(".code-embed-5.w-embed").forEach(embed => {
-          embed.querySelectorAll("style").forEach(s => head.appendChild(s.cloneNode(true)));
-          embed.innerHTML = "";
-        });
-      })();
-  
-      // ——— узлы интерфейса (поддержка старых и новых селекторов) ———
+
+      // узлы интерфейса (поддержка старых и новых селекторов) 
       const listContainer =
         qs(".collection-list-wrapper [fs-cmsload-element='list'].w-dyn-items") ||
         qs(".w-dyn-items");
@@ -531,4 +479,3 @@
   </body>
 </html>
 
-      
