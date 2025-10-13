@@ -17,6 +17,48 @@
   <link href="images/favicon.png" rel="shortcut icon" type="image/x-icon">
   <link href="images/webclip.png" rel="apple-touch-icon"><!--  [Attributes by Finsweet] CMS Load  -->
   <script async="" src="https://cdn.jsdelivr.net/npm/@finsweet/attributes-cmsload@1/cmsload.js"></script>
+
+  <style>
+    /* 1) убираем плавный скролл, чтобы не провоцировать фризы при возврате к шапке */
+    html { scroll-behavior: auto; }
+  
+    /* 2) хедер — собственный контекст наложения, чтобы child с z-index:-1 был поверх body */
+    .header {
+      position: relative;
+      z-index: 0;         /* важно! создаёт стек для z-index детей */
+      min-height: 100vh;
+      /* overflow: clip;  — если из-за него фон вдруг «обрезается», просто удали эту строку */
+    }
+  
+    /* 3) Spline-канвас как фиксированный фон шапки, всегда «на готове» */
+    .header-fon-spline {
+      position: fixed;     /* закреплён у верха окна */
+      inset: 0;
+      z-index: -1;         /* под контентом хедера, но над body */
+      pointer-events: none;
+      will-change: transform;
+      transform: translateZ(0);
+      backface-visibility: hidden;
+  
+      /* запрет «гибернации», если где-то задана */
+      content-visibility: visible !important;
+      contain-intrinsic-size: auto !important;
+    }
+  
+    /* 4) Контент шапки поверх фона */
+    .div-block-186,
+    .div-block-74,
+    .headers,
+    .navbar {
+      position: relative;
+      z-index: 1;
+    }
+  
+    /* 5) Основной контент начинается под фиксированным хедером */
+    .section-analitic { margin-top: 100vh; }
+  </style>
+  
+
 </head>
 <body>
   <section class="header">
@@ -163,45 +205,8 @@
                 -webkit-line-clamp: 4 ;
             }
         }
-
-  /* 1) Снимаем микролаги при возврате наверх */
-  html { scroll-behavior: auto; }
-
-  /* 2) Делаем Spline-канвас фоном, который всегда готов (не выгружается) */
-  .header { 
-    position: relative; 
-    min-height: 100vh;         /* высота хедера — весь экран */
-    overflow: clip; 
-  }
-
-  .header-fon-spline {
-    position: fixed;            /* всегда закреплён у верха окна */
-    inset: 0;                   /* top:0; right:0; bottom:0; left:0 */
-    z-index: -1;                /* фон под контентом */
-    pointer-events: none;       /* клики проходят к кнопкам в хедере */
-    will-change: transform;     /* кладём на GPU */
-    transform: translateZ(0);
-    backface-visibility: hidden;
-    /* убедимся, что его не "усыпляют" (если где-то задавали): */
-    content-visibility: visible !important;
-    contain-intrinsic-size: auto !important;
-  }
-
-  /* 3) Контент хедера поверх фона */
-  .div-block-186,
-  .div-block-74,
-  .headers,
-  .navbar {
-    position: relative;
-    z-index: 1;
-  }
-
-  /* 4) Основной контент начинается ПОД фиксированным хедером */
-  .section-analitic {
-    margin-top: 100vh;
-  }
-</style>
-
+    </style>
+    
                   </head>
                   </html>
                 </div>
@@ -525,3 +530,5 @@
   </script>  
   </body>
 </html>
+
+      
