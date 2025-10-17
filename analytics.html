@@ -444,8 +444,8 @@ qsa(".code-embed-5").forEach(n => n.remove());
     let currentY = targetY;
     let animId = null;
   
-    const SPEED = 0.48;   // сделать «медленнее» — уменьши до 0.18
-    const EASE  = 0.12;   // «вязкость» — можно 0.10–0.15
+    const SPEED = 0.30;   // верхняя безопасная граница
+    const EASE  = 0.14;  // «вязкость» — можно 0.10–0.15
     const MAX_STEP = 120;
   
     function clampScroll(y) {
