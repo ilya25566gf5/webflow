@@ -1295,6 +1295,117 @@ const buildArticleUrl = (a) => {
     });
   </script>
   
+  <script>
+    (() => {
+      // избегаем двойной инициализации
+      if (document.body.dataset.smoothApplied === "1") return;
+      document.body.dataset.smoothApplied = "1";
+    
+      // уважение reduce motion
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    
+      const SPEED = 0.30;
+      const EASE  = 0.14;
+      const MAX_STEP = 180;
+    
+      let currentY = window.pageYOffset || document.documentElement.scrollTop || 0;
+      let targetY  = currentY;
+      let animId   = null;
+      let lastTs   = performance.now();
+    
+      let speedDyn = SPEED;
+      const SPEED_MIN = 0.22, SPEED_MAX = 0.34;
+    
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const maxScrollY = () => Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    
+      // пропуск, если активна модалка/внутренняя прокрутка
+      function shouldSkipFromEvent(e){
+        // Любой предок с классом .native-scroll — пропускаем
+        if (e && e.target && e.target.closest('.native-scroll')) return true;
+        // Поля ввода/textarea/contenteditable — пропускаем
+        const el = e && e.target;
+        if (!el) return false;
+        const tag = (el.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || el.isContentEditable) return true;
+        return false;
+      }
+    
+      function start(){
+        if (animId) return;
+        lastTs = performance.now();
+        animId = requestAnimationFrame(tick);
+      }
+    
+      function tick(ts){
+        animId = requestAnimationFrame(tick);
+        const dt = ts - lastTs; lastTs = ts;
+    
+        if (dt > 20)       speedDyn = Math.max(SPEED_MIN, speedDyn - 0.01);
+        else if (dt < 15)  speedDyn = Math.min(SPEED_MAX, speedDyn + 0.005);
+    
+        currentY += (targetY - currentY) * EASE;
+    
+        if (Math.abs(targetY - currentY) < 0.5) {
+          currentY = targetY;
+          window.scrollTo(0, currentY);
+          cancelAnimationFrame(animId);
+          animId = null;
+          return;
+        }
+        window.scrollTo(0, currentY);
+      }
+    
+      function nudgeTarget(dy){
+        const step = clamp(dy * speedDyn, -MAX_STEP, MAX_STEP);
+        targetY = clamp(targetY + step, 0, maxScrollY());
+        start();
+      }
+    
+      window.addEventListener('wheel', (e) => {
+        if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+        if (shouldSkipFromEvent(e)) return;
+        e.preventDefault();
+        nudgeTarget(e.deltaY);
+      }, { passive: false });
+    
+      window.addEventListener('keydown', (e) => {
+        if (shouldSkipFromEvent(e)) return;
+        const h = window.innerHeight;
+        let dy = 0;
+        switch (e.key) {
+          case 'ArrowDown': dy = 80; break;
+          case 'ArrowUp':   dy = -80; break;
+          case 'PageDown':  dy =  h * 0.9; break;
+          case 'PageUp':    dy = -h * 0.9; break;
+          case 'Home':      targetY = 0; start(); e.preventDefault(); return;
+          case 'End':       targetY = maxScrollY(); start(); e.preventDefault(); return;
+          case ' ':         dy = (e.shiftKey ? -1 : 1) * h * 0.9; break;
+          default: return;
+        }
+        e.preventDefault();
+        nudgeTarget(dy);
+      }, { passive: false });
+    
+      document.addEventListener('click', (e) => {
+        const a = e.target.closest('a[href^="#"]');
+        if (!a) return;
+        const id = a.getAttribute('href');
+        if (!id || id === '#') return;
+        const el = document.querySelector(id);
+        if (!el) return;
+        e.preventDefault();
+        const y = clamp(window.pageYOffset + el.getBoundingClientRect().top, 0, maxScrollY());
+        targetY = y;
+        start();
+      });
+    
+      window.addEventListener('scroll', () => {
+        if (!animId) { currentY = targetY = window.pageYOffset || document.documentElement.scrollTop || 0; }
+      }, { passive: true });
+    })();
+    </script>
+    
   
 </body>
 </html>
